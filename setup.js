@@ -83,9 +83,9 @@ const updateSetupBot = async (client, port) => {
     const clientPath = path.join(clientsBasePath, `cliente_${client.id}_${client.instance_id}`);
 
     // Verificar si la carpeta ya existe
-    if (fs.existsSync(clientPath)) {
-        logger.warn(`La carpeta ya existe para el cliente: ${client.name}`, { clientPath });
-        throw new Error(`La carpeta para ${client.name} ya existe.`);
+    if (!fs.existsSync(clientPath)) {
+        logger.warn(`La carpeta no existe para el cliente: ${client.name}`, { clientPath });
+        throw new Error(`La carpeta para ${client.name} no ya existe.`);
     }
 
     logger.info(`Clonando plantilla a la carpeta del cliente`, { from: projectTemplatePath, to: clientPath });
