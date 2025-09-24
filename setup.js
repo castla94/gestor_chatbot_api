@@ -131,15 +131,15 @@ app.post('/clientes/change-status', async (req, res) => {
 });
 
 app.post('/clientes/reset', async (req, res) => {
-    const { id, name } = req.body;
+    const { id, name, instance_id } = req.body;
     logger.info('Solicitud de detención de cliente recibida', { id, name });
 
-    if (!id || !name) {
-        logger.warn('Faltan parámetros requeridos', { id, name });
-        return res.status(400).json({ error: 'Faltan parámetros (id, name)' });
+    if (!id || !name || !instance_id) {
+        logger.warn('Faltan parámetros requeridos', { id, name, instance_id });
+        return res.status(400).json({ error: 'Faltan parámetros (id, name, instance_id)' });
     }
 
-    const clientPath = path.join(clientsBasePath, `cliente_${id}`);
+    const clientPath = path.join(clientsBasePath, `cliente_${id}_${instance_id}`);
     logger.info('Verificando ruta del cliente', { clientPath });
 
     if (!fs.existsSync(clientPath)) {
@@ -148,7 +148,7 @@ app.post('/clientes/reset', async (req, res) => {
     }
 
     try {
-        const pm2Name = `bot-${name}`;
+        const pm2Name = `api-bot-${name}-${instance_id}`;
         logger.info('Deteniendo cliente con PM2', { pm2Name, clientPath });
         process.chdir(clientPath);
         execSync(`pm2 stop ${pm2Name}`, {
@@ -239,63 +239,17 @@ app.get('/clientes/status', (req, res) => {
     }
 });
 
-app.get('/clientes/logs/:appName', (req, res) => {
-    const appName = req.params.appName;
-    const timeout = 5000;
-    logger.info('Solicitud de logs recibida', { appName, timeout });
-
-    if (!appName) {
-        logger.warn('Falta nombre de aplicación');
-        return res.status(400).json({ error: 'Debe proporcionar un nombre de aplicación' });
-    }
-
-    try {
-        logger.info('Iniciando stream de logs PM2', { appName });
-        const logStream = spawn('pm2', ['logs', appName]);
-
-        res.setHeader('Content-Type', 'text/plain');
-
-        logStream.stdout.on('data', (data) => {
-            logger.debug('Datos recibidos de stdout', { appName });
-            res.write(data.toString());
-        });
-
-        logStream.stderr.on('data', (data) => {
-            logger.debug('Datos recibidos de stderr', { appName });
-            res.write(data.toString());
-        });
-
-        const timeoutId = setTimeout(() => {
-            logger.info('Tiempo de espera del stream de logs alcanzado', { appName, timeout });
-            logStream.kill();
-            res.end(`\nConexión cerrada después de ${timeout / 1000} segundos.`);
-        }, timeout);
-
-        logStream.on('close', () => {
-            logger.info('Stream de logs cerrado', { appName });
-            clearTimeout(timeoutId);
-            res.end(`\nProceso de logs cerrado.`);
-        });
-
-    } catch (error) {
-        logger.error('Error al obtener logs:', { error: error.message, appName, stack: error.stack });
-        res.status(500).json({ error: 'Error al obtener logs' });
-    }
-});
-
-
-
 
 app.post('/clientes/bot-conextion', async (req, res) => {
-    const { id, name } = req.body;
+    const { id, name, instance_id } = req.body;
     logger.info('Solicitud estado de conexion', { id, name });
 
-    if (!id || !name) {
-        logger.warn('Faltan parámetros requeridos', { id, name });
-        return res.status(400).json({ error: 'Faltan parámetros (id, name)' });
+    if (!id || !name ||!instance_id) {
+        logger.warn('Faltan parámetros requeridos', { id, name, instance_id });
+        return res.status(400).json({ error: 'Faltan parámetros (id, name, instance_id)' });
     }
 
-    const clientPath = path.join(clientsBasePath, `cliente_${id}`);
+    const clientPath = path.join(clientsBasePath, `cliente_${id}_${instance_id}`);
     logger.info('Verificando ruta del cliente', { clientPath });
 
     if (!fs.existsSync(clientPath)) {
@@ -330,8 +284,8 @@ app.post('/clientes/bot-conextion', async (req, res) => {
 app.post('/clientes/rebot-pm2-all', async (req, res) => {
     logger.info('Iniciando Reboot de todos los clientes');
     try {
-        execSync(`pm2 ls | grep 'bot-' | awk '{print $4}' | xargs -I {} pm2 stop {} `, { encoding: 'utf-8' });
-        execSync(`pm2 ls | grep 'bot-' | awk '{print $4}' | xargs -I {} pm2 start {} `, { encoding: 'utf-8' });
+        execSync(`pm2 ls | grep 'api-bot-' | awk '{print $4}' | xargs -I {} pm2 stop {} `, { encoding: 'utf-8' });
+        execSync(`pm2 ls | grep 'api-bot-' | awk '{print $4}' | xargs -I {} pm2 start {} `, { encoding: 'utf-8' });
         logger.info('Reboot exitoso');
         res.status(200).json({ message: `Reboot exitoso` });
     } catch (error) {
@@ -343,7 +297,7 @@ app.post('/clientes/rebot-pm2-all', async (req, res) => {
 app.post('/clientes/pm2-max-memory', async (req, res) => {
     logger.info('Iniciando pm2-max-memory');
     try {
-        const output = execSync("pm2 ls | grep 'bot-' | awk '{print $4}'", { encoding: 'utf-8' });
+        const output = execSync("pm2 ls | grep 'api-bot-' | awk '{print $4}'", { encoding: 'utf-8' });
         logger.info('PM2 bot processes:', { processes: output.trim().split('\n') });
 
         const processes = output.trim().split('\n');
@@ -351,7 +305,8 @@ app.post('/clientes/pm2-max-memory', async (req, res) => {
             logger.info(`Processing PM2 restart for process: ${processItem}`);
             let processName = processItem;
             logger.info(`start replace process ${processName}`);
-            processName = processName.replace('bot-', '');
+            processName = processName.replace('api-bot-', '');
+            processName = processName.replace('-', '_');
             logger.info(`finish replace process ${processName}`);
             const clientPath = path.join(clientsBasePath, `cliente_${processName}`);
             // Check if start-pm2.sh exists before executing
