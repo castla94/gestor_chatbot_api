@@ -77,6 +77,67 @@ const cloneAndSetupBot = async (client, port) => {
     }, 5000);
 };
 
+
+// Función para crear un nuevo cliente
+const updateSetupBot = async (client, port) => {
+    const clientPath = path.join(clientsBasePath, `cliente_${client.id}_${client.instance_id}`);
+
+    // Verificar si la carpeta ya existe
+    if (fs.existsSync(clientPath)) {
+        logger.warn(`La carpeta ya existe para el cliente: ${client.name}`, { clientPath });
+        throw new Error(`La carpeta para ${client.name} ya existe.`);
+    }
+
+    logger.info(`Clonando plantilla a la carpeta del cliente`, { from: projectTemplatePath, to: clientPath });
+
+    const envPath = path.join(clientPath, '.env');
+    logger.info(`Configurando variables de entorno`, { envPath });
+
+    let envContent = '';
+    if (fs.existsSync(envPath)) {
+        envContent = fs.readFileSync(envPath, 'utf-8');
+        logger.debug(`Archivo .env existente encontrado`, { content: envContent });
+    }
+
+    const updateEnvVariable = (variable, value) => {
+        logger.debug(`Actualizando variable de entorno`, { variable, value });
+        const regex = new RegExp(`^${variable}=.*$`, 'm');
+        if (regex.test(envContent)) {
+            envContent = envContent.replace(regex, `${variable}=${value}`);
+        } else {
+            envContent += `\n${variable}=${value}`;
+        }
+    };
+
+    updateEnvVariable('WEBHOOK', client.webhook);
+    
+    fs.writeFileSync(envPath, envContent);
+    logger.info(`Variables de entorno actualizadas exitosamente`);
+
+    const pm2Name = `api-bot-${client.name}-${client.instance_id}`;
+    logger.info(`Cambiando directorio a la ruta del cliente`, { clientPath });
+    process.chdir(clientPath);
+
+    logger.info(`Deteniendo bot con PM2`, { pm2Name });
+    execSync(`pm2 stop ${pm2Name} --max-memory-restart=2G`, {
+        stdio: 'inherit'
+    });
+
+    logger.info(`Iniciando bot con PM2`, { pm2Name });
+    execSync(`pm2 start ${pm2Name} --max-memory-restart=2G`, {
+        stdio: 'inherit'
+    });
+    logger.info(`Guardando configuración de PM2`);
+    execSync(`pm2 save --force`, {
+        stdio: 'inherit'
+    });
+    logger.info(`Configuración del bot completada exitosamente`, { client: client.name, port });
+    // Start gestor_clientes after 5 seconds without blocking execution
+    setTimeout(() => {
+        execSync(`pm2 start gestor_clientes`, { stdio: 'inherit' });
+    }, 5000);
+};
+
 app.post('/clientes/create', async (req, res) => {
     const { id, name, email, port,instance_id, webhook } = req.body;
     logger.info('Solicitud de creación de cliente recibida', { id, name, email, port, instance_id, webhook });
@@ -94,6 +155,27 @@ app.post('/clientes/create', async (req, res) => {
         res.status(200).json({ message: `Cliente ${name} creado e iniciado en el puerto ${port}` });
     } catch (error) {
         logger.error('Error al crear cliente:', { error: error.message, client: name, stack: error.stack });
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/clientes/update', async (req, res) => {
+    const { id, name, email, port,instance_id, webhook } = req.body;
+    logger.info('Solicitud de actualizacion de cliente recibida', { id, name, email, port, instance_id, webhook });
+
+    if (!id || !name || !email || !port || !instance_id || !webhook) {
+        logger.warn('Faltan parámetros requeridos', { id, name, email, port, instance_id, webhook });
+        return res.status(400).json({ error: 'Faltan parámetros (id, name, email, port, instance_id, webhook)' });
+    }
+
+    try {
+        const client = { id, name, email, instance_id, webhook };
+        logger.info('Iniciando proceso de actualizacion del cliente', { client });
+        await updateSetupBot(client, port);
+        logger.info('Cliente creado exitosamente', { client: name, port });
+        res.status(200).json({ message: `Cliente ${name} actualizado e iniciado en el puerto ${port}` });
+    } catch (error) {
+        logger.error('Error al actualizar cliente:', { error: error.message, client: name, stack: error.stack });
         res.status(500).json({ error: error.message });
     }
 });
